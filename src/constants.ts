@@ -5,13 +5,13 @@ if (!process.env.BOT_TOKEN) {
 }
 
 if (!process.env.ADMIN_ID) {
-    throw new Error('No ADMIN_ID provided')
+	throw new Error('No ADMIN_ID provided');
 }
 
-if (!process.env.CHAT_ID) {
-    throw new Error('No CHAT_ID provided')
+if (!process.env.CHANNEL_ID) {
+	throw new Error('No CHANNEL_ID provided');
 }
 
-export const BOT_TOKEN = process.env.BOT_TOKEN
-export const ADMIN_ID = parseInt(process.env.ADMIN_ID)
-export const CHAT_ID = parseInt(process.env.CHAT_ID)
+export const BOT_TOKEN = process.env.BOT_TOKEN;
+export const ADMIN_ID = parseInt(process.env.ADMIN_ID);
+export const CHANNEL_ID = parseInt(process.env.CHANNEL_ID);

@@ -1,7 +1,6 @@
 import { Context } from 'telegraf';
-import { COMMON_ERROR_TEXT } from './text';
 
 export function replyWithError(ctx: Context, e: unknown): Promise<unknown> {
-	console.error('Starting message error: ' + e);
-	return ctx.reply(COMMON_ERROR_TEXT).catch(console.error);
+	console.error('Error occurred: ' + e);
+	return ctx.reply('Произошла ошибка, попробуйте еще раз.').catch(console.error);
 }

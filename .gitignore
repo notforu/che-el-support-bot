@@ -69,3 +69,4 @@ common/autoinstallers/*/.npmrc
 
 .idea
 dist/
+scripts
