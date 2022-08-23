@@ -10,7 +10,7 @@ const bot = new Telegraf<BotContext>(BOT_TOKEN);
 const startScene = new Scenes.BaseScene<BotContext>('startScene');
 startScene.enter(async (ctx) => {
 	try {
-		return ctx.reply(`Хай, чё ел сёдня?
+		return ctx.reply(`Хай, че ел(а) сёдня?
 Принимается текст, фото, или всё вместе:`);
 	} catch (e) {
 		return replyWithError(ctx, e);
@@ -20,6 +20,7 @@ startScene.enter(async (ctx) => {
 startScene.on('message', async ctx => {
 	try {
 		const message: any = ctx.message;
+		if (message.text === '/start') return (ctx as any).scene.enter('startScene');
 		if (message.caption) {
 			ctx.session = {text: message.caption, fileId: message.photo[0].file_id};
 		} else {
@@ -40,6 +41,9 @@ anonScene.enter(async (ctx) => {
 					[
 						Markup.button.callback('Нет', '0'),
 						Markup.button.callback('Да', '1'),
+					],
+					[
+						Markup.button.callback('◀️ Назад', 'publish_again'),
 					],
 				],
 			},
