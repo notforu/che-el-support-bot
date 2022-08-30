@@ -17,12 +17,13 @@ startScene.enter(async (ctx) => {
 	}
 });
 
-startScene.on('message', async ctx => {
+async function onMessage(ctx: BotContext) {
 	try {
 		const message: any = ctx.message;
 		if (message.text === '/start') return (ctx as any).scene.enter('startScene');
-		if (message.caption) {
-			ctx.session = {text: message.caption, fileId: message.photo[0].file_id};
+		console.log(message);
+		if (message.photo) {
+			ctx.session = {text: message.caption || '', fileId: message.photo[0].file_id};
 		} else {
 			ctx.session = {text: message.text};
 		}
@@ -30,7 +31,9 @@ startScene.on('message', async ctx => {
 	} catch (e) {
 		return replyWithError(ctx, e);
 	}
-});
+}
+
+startScene.on('message', onMessage);
 
 const anonScene = new Scenes.BaseScene<BotContext>('anonScene');
 anonScene.enter(async (ctx) => {
@@ -115,7 +118,7 @@ bot.use(session());
 bot.use(stage.middleware() as any);
 
 bot.command('/start', (ctx) => (ctx as any).scene.enter('startScene'));
-bot.on('message', (ctx) => (ctx as any).scene.enter('startScene'));
+bot.on('message', onMessage);
 
 bot.on('callback_query', async (ctx) => {
 	try {
