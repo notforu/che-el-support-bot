@@ -55,6 +55,7 @@ async function sendMediaGroup(ctx: BotContext, chatId: number, text: string, fil
 
 bot.on('media_group' as any, async ctx => {
 	try {
+		console.log('mediagroup', (ctx as any).mediaGroup);
 		ctx.session = {
 			text: (ctx as any).mediaGroup[0].caption,
 			fileIds: (ctx as any).mediaGroup.map((message: any) => message.photo[0].file_id),
@@ -93,9 +94,10 @@ anonScene.on('callback_query', async (ctx) => {
 		if (!ctx.chat || !ctx.session) return;
 		if (!ctx.callbackQuery.data) throw Error('Incorrect answer');
 		const isAnonymous = Boolean(Number(ctx.callbackQuery.data));
-		let text = (isAnonymous || !ctx.from?.username) ? (ctx.session.text || '') : `${ctx.session.text}
+		const ensuredText = ctx.session.text || '';
+		let text = (isAnonymous || !ctx.from?.username) ? (ensuredText) : `${ensuredText}
 
-@${ctx.from?.username}`;
+@${ctx.from.username}`;
 		text += `
 
 #че_ел_подписчик`;
@@ -171,8 +173,8 @@ bot.on('callback_query', async (ctx) => {
 				if (mediaGroupId) {
 					const payload = await redisClient.get(mediaGroupId);
 					if (!payload) throw new Error('No payload in cache for mediaGroupId: ' + mediaGroupId);
-					const {fileIds, text} = JSON.parse(payload) as { fileIds: string[]; text: string };
-					await sendMediaGroup(ctx, CHANNEL_ID, text, fileIds);
+					const parsed = JSON.parse(payload) as { fileIds: string[]; text: string };
+					await sendMediaGroup(ctx, CHANNEL_ID, parsed.text, parsed.fileIds);
 					await redisClient.del(mediaGroupId);
 				} else {
 					await ctx.telegram.copyMessage(
