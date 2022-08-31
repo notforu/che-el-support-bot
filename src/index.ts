@@ -8,7 +8,7 @@ const mediaGroup = require('telegraf-media-group');
 
 require('dotenv').config();
 
-const redisClient = createClient({ url: 'redis://0.0.0.0:6379' });
+const redisClient = createClient({ url: process.env.REDIS_URL || 'redis://0.0.0.0:6379' });
 
 const bot = new Telegraf<BotContext>(BOT_TOKEN);
 
