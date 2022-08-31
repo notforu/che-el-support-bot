@@ -54,7 +54,6 @@ async function sendMediaGroup(ctx: BotContext, chatId: number, text: string, fil
 
 bot.on('media_group' as any, async ctx => {
 	try {
-		console.log('mediagroup', (ctx as any).mediaGroup);
 		ctx.session = {
 			text: (ctx as any).mediaGroup[0].caption,
 			fileIds: (ctx as any).mediaGroup.map((message: any) => message.photo[0].file_id),
