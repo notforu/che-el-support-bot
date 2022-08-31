@@ -22,7 +22,7 @@ bot.use(stage.middleware() as any);
 startScene.enter(async (ctx) => {
 	try {
 		return ctx.reply(`Хай, че ел(а) сёдня?
-Принимается текст, фото, или всё вместе:`);
+Принимается текст, фотографии, или всё вместе:`);
 	} catch (e) {
 		return replyWithError(ctx, e);
 	}
