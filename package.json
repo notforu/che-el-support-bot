@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "dotenv": "16.0.1",
-    "telegraf": "4.8.6"
+    "redis": "4.3.0",
+    "telegraf": "4.8.6",
+    "telegraf-media-group": "1.2.1"
   },
   "devDependencies": {
     "@types/node": "18.7.9",
