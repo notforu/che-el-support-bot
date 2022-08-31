@@ -21,7 +21,7 @@ bot.use(stage.middleware() as any);
 
 startScene.enter(async (ctx) => {
 	try {
-		return ctx.reply(`Хай, че ел(а) сёдня?
+		return ctx.reply(`Хай! Че ел(а) сегодня?
 Принимается текст, фотографии, или всё вместе:`);
 	} catch (e) {
 		return replyWithError(ctx, e);
@@ -32,7 +32,6 @@ async function onMessage(ctx: BotContext) {
 	try {
 		const message: any = ctx.message;
 		if (message.text === '/start') return (ctx as any).scene.enter('startScene');
-		//console.log(2, message);
 		if (message.photo) {
 			ctx.session = {text: message.caption || '', fileId: message.photo[0].file_id};
 		} else {
@@ -66,7 +65,6 @@ bot.on('media_group' as any, async ctx => {
 	}
 });
 
-startScene.on('message', onMessage);
 
 anonScene.enter(async (ctx) => {
 	try {
@@ -163,6 +161,7 @@ bot.on('message', onMessage);
 
 bot.on('callback_query', async (ctx) => {
 	try {
+		if (ctx.callbackQuery.data === 'publish_again') return (ctx as any).scene.enter('startScene');
 		if (ADMIN_ID !== ctx.from?.id) throw Error('Permission denied');
 		if (!ctx.callbackQuery.data) throw Error('Incorrect answer');
 		const action = JSON.parse(ctx.callbackQuery.data);
