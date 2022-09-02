@@ -1,14 +1,13 @@
 import { Markup, Scenes, session, Telegraf } from 'telegraf';
-import { createClient } from 'redis';
 import { ADMIN_ID, BOT_TOKEN, CHANNEL_ID } from './constants';
 import { replyWithError } from './utils';
-import { BotContext } from './types';
+import { BotContext, MediaGroupContext } from './types';
+import { redisClient } from './redis';
+import { canPost, logPost } from './post-limit';
 
 const mediaGroup = require('telegraf-media-group');
 
 require('dotenv').config();
-
-const redisClient = createClient({ url: process.env.REDIS_URL || 'redis://0.0.0.0:6379' });
 
 const bot = new Telegraf<BotContext>(BOT_TOKEN);
 
@@ -52,11 +51,12 @@ async function sendMediaGroup(ctx: BotContext, chatId: number, text: string, fil
 	return res[0].media_group_id;
 }
 
-bot.on('media_group' as any, async ctx => {
+bot.on('media_group' as any, async (c: any) => {
+	const ctx: MediaGroupContext = c;
 	try {
 		ctx.session = {
-			text: (ctx as any).mediaGroup[0].caption,
-			fileIds: (ctx as any).mediaGroup.map((message: any) => message.photo[0].file_id),
+			text: ctx.mediaGroup[0].caption || '',
+			fileIds: ctx.mediaGroup.map((message: any) => message.photo[0].file_id),
 		};
 		return (ctx as any).scene.enter('anonScene');
 	} catch (e) {
@@ -88,11 +88,13 @@ anonScene.enter(async (ctx) => {
 anonScene.on('callback_query', async (ctx) => {
 	try {
 		if (ctx.callbackQuery.data === 'publish_again') return (ctx as any).scene.enter('startScene');
-		if (!ctx.chat || !ctx.session) return;
-		if (!ctx.callbackQuery.data) throw Error('Incorrect answer');
+		if (!ctx.chat || !ctx.session || !ctx.from || !ctx.callbackQuery.data) return;
+		if (!await canPost(ctx.from.id)) {
+			return ctx.reply('Вы превысили лимит постов на сегодня - в день можно публиковать только 5. Приходите завтра!');
+		}
 		const isAnonymous = Boolean(Number(ctx.callbackQuery.data));
 		const ensuredText = ctx.session.text || '';
-		let text = (isAnonymous || !ctx.from?.username) ? (ensuredText) : `${ensuredText}
+		let text = (isAnonymous || !ctx.from.username) ? (ensuredText) : `${ensuredText}
 
 @${ctx.from.username}`;
 		text += `
@@ -139,6 +141,7 @@ anonScene.on('callback_query', async (ctx) => {
 				],
 			},
 		});
+		await logPost(ctx.from.id);
 
 		return ctx.telegram.sendMessage(ADMIN_ID, 'Постим такое?', {
 			reply_markup: {
