@@ -1,9 +1,10 @@
 import { Markup, Scenes, session, Telegraf } from 'telegraf';
-import { ADMIN_ID, BOT_TOKEN, CHANNEL_ID } from './constants';
+import { ADMIN_ID, BOT_TOKEN, CHANNEL_ID, DISPATCH_CRON_PATTERN, DISPATCH_QUEUE_REDIS_KEY } from './constants';
 import { replyWithError } from './utils';
 import { BotContext, MediaGroupContext } from './types';
 import { redisClient } from './redis';
 import { canPost, logPost } from './post-limit';
+import schedule from 'node-schedule'
 
 const mediaGroup = require('telegraf-media-group');
 
@@ -42,8 +43,8 @@ async function onMessage(ctx: BotContext) {
 	}
 }
 
-async function sendMediaGroup(ctx: BotContext, chatId: number, text: string, fileIds: string[]): Promise<string | undefined> {
-	const res = await ctx.telegram.sendMediaGroup(chatId, fileIds.map((fileId, index) => ({
+async function sendMediaGroup(chatId: number, text: string, fileIds: string[]): Promise<string | undefined> {
+	const res = await bot.telegram.sendMediaGroup(chatId, fileIds.map((fileId, index) => ({
 		type: 'photo',
 		media: fileId,
 		caption: index === 0 ? (text || '') : '',
@@ -101,35 +102,26 @@ anonScene.on('callback_query', async (ctx) => {
 
 #че_ел_подписчик`;
 
-		let postAction: string;
+		let action: any
 		if (ctx.session.fileIds) {
 			const fileIds = ctx.session.fileIds;
-			const mediaGroupId = await sendMediaGroup(ctx, ADMIN_ID, text, fileIds);
+			const mediaGroupId = await sendMediaGroup(ADMIN_ID, text, fileIds);
 			if (!mediaGroupId) throw new Error('No media group ID for album!');
 			await redisClient.set(mediaGroupId, JSON.stringify({ fileIds, text }));
-			postAction = JSON.stringify({
-				type: 'post',
-				mediaGroupId,
-			});
+			action = { mediaGroupId };
 		} else if (ctx.session.fileId) {
 			const res = await ctx.telegram.sendPhoto(
 				ADMIN_ID,
 				ctx.session.fileId,
 				{caption: text},
 			);
-			postAction = JSON.stringify({
-				type: 'post',
-				messageId: res.message_id,
-			});
+			action = { messageId: res.message_id }
 		} else {
 			const res = await ctx.telegram.sendMessage(
 				ADMIN_ID,
 				text,
 			);
-			postAction = JSON.stringify({
-				type: 'post',
-				messageId: res.message_id,
-			});
+			action = { messageId: res.message_id };
 		}
 
 		await ctx.editMessageText('Ваш пост отправлен на модерацию', {
@@ -147,9 +139,13 @@ anonScene.on('callback_query', async (ctx) => {
 			reply_markup: {
 				inline_keyboard: [
 					[
-						Markup.button.callback('Да', postAction),
+						Markup.button.callback('Да', JSON.stringify({ type: 'post', ...action })),
 						Markup.button.callback('Нет', JSON.stringify({type: 'delete'})),
 					],
+					[
+						Markup.button.callback('В начало', JSON.stringify({ type: 'push_front', ...action })),
+						Markup.button.callback('В конец', JSON.stringify({ type: 'push_back', ...action })),
+					]
 				],
 			},
 		});
@@ -161,6 +157,35 @@ anonScene.on('callback_query', async (ctx) => {
 bot.command('/start', (ctx) => (ctx as any).scene.enter('startScene'));
 bot.on('message', onMessage);
 
+type QueueItem = MediaGroupQueueItem | MessageIdQueueItem
+
+interface MediaGroupQueueItem {
+	type: 'mediaGroup',
+	mediaGroupId: string
+}
+
+interface MessageIdQueueItem {
+	type: 'messageId',
+	messageId: number
+}
+
+async function post(params: QueueItem): Promise<void> {
+	if (params.type === 'mediaGroup') {
+		const { mediaGroupId } = params;
+		const payload = await redisClient.get(mediaGroupId);
+		if (!payload) throw new Error('No payload in cache for mediaGroupId: ' + mediaGroupId);
+		const parsed = JSON.parse(payload) as { fileIds: string[]; text: string };
+		await sendMediaGroup(CHANNEL_ID, parsed.text, parsed.fileIds);
+		await redisClient.del(mediaGroupId);
+	} else {
+		await bot.telegram.copyMessage(
+			CHANNEL_ID,
+			ADMIN_ID,
+			params.messageId,
+		);
+	}
+}
+
 bot.on('callback_query', async (ctx) => {
 	try {
 		if (ctx.callbackQuery.data === 'publish_again') return (ctx as any).scene.enter('startScene');
@@ -171,20 +196,22 @@ bot.on('callback_query', async (ctx) => {
 		const emptyExtra = {reply_markup: {inline_keyboard: []}};
 		switch (type) {
 			case 'post':
-				if (mediaGroupId) {
-					const payload = await redisClient.get(mediaGroupId);
-					if (!payload) throw new Error('No payload in cache for mediaGroupId: ' + mediaGroupId);
-					const parsed = JSON.parse(payload) as { fileIds: string[]; text: string };
-					await sendMediaGroup(ctx, CHANNEL_ID, parsed.text, parsed.fileIds);
-					await redisClient.del(mediaGroupId);
-				} else {
-					await ctx.telegram.copyMessage(
-						CHANNEL_ID,
-						ADMIN_ID,
-						messageId,
-					);
-				}
+				await post({
+					type: mediaGroupId ? 'mediaGroup' : 'messageId',
+					messageId,
+					mediaGroupId
+				})
 				await ctx.editMessageText('Сообщение опубликовано', emptyExtra);
+				break;
+			case 'push_back':
+			case 'push_front':
+				const enqueue = (type === 'push_back' ? redisClient.lPush: redisClient.rPush).bind(redisClient);
+				await enqueue(DISPATCH_QUEUE_REDIS_KEY, JSON.stringify({
+					type: mediaGroupId ? 'mediaGroup' : 'messageId',
+					messageId,
+					mediaGroupId
+				}));
+				await ctx.editMessageText(`Сообщение добавлено в ${type === 'push_front' ? 'начало' : 'конец'} очереди`, emptyExtra);
 				break;
 			case 'delete':
 				await ctx.editMessageText('Сообщение не опубликовано', emptyExtra);
@@ -199,6 +226,16 @@ bot.on('callback_query', async (ctx) => {
 	}
 });
 
+schedule.scheduleJob('dispatch', DISPATCH_CRON_PATTERN, async () => {
+	try {
+		const item = await redisClient.rPop(DISPATCH_QUEUE_REDIS_KEY);
+		if (!item) return;
+		await post(JSON.parse(item) as QueueItem)
+	} catch (e) {
+		bot.telegram.sendMessage(ADMIN_ID, `Не удалось отправить сообщение: ${e}`);
+	}
+})
+
 Promise.all([bot.launch(), redisClient.connect()])
 	.then(() => console.log('bot started'))
 	.catch((e) => console.error('Launch error: ' + e));
@@ -206,14 +243,18 @@ Promise.all([bot.launch(), redisClient.connect()])
 bot.catch((e) => console.error('Common error: ' + e));
 redisClient.on('error', (err) => console.log('Redis error:', err));
 
+function shutdown() {
+	redisClient.disconnect();
+	schedule.gracefulShutdown()
+	process.exit();
+}
+
 // Enable graceful stop
 process.once('SIGTERM', () => {
 	bot.stop('SIGTERM');
-	redisClient.disconnect();
-	process.exit();
+	shutdown();
 });
 process.once('SIGINT', () => {
 	bot.stop('SIGINT');
-	redisClient.disconnect();
-	process.exit();
+	shutdown();
 });
